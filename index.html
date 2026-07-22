@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A101 × Mondelez — Teslimat Takip Portalı</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#2B1B4D;--mdlz:#4B2E83;--blue:#0A57C2;--blue-l:#9EC3FF;--bl2:#8FB8FF;--bg:#F4F3F7;--border:#E4E1EE;--soft:#EAE7F2;--muted:#8A82A0;--label:#5B5470;--danger:#E0483C;--green:#157F4B;}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  button{cursor:pointer;font-family:inherit;}
+  input,select,textarea{font-family:inherit;}
+  a{color:inherit;text-decoration:none;}
+  th{color:#9A93AC;font-size:11px;font-weight:700;text-transform:uppercase;padding:11px 8px;text-align:left;letter-spacing:.3px;}
+  td{padding:11px 8px;font-size:13px;border-bottom:1px solid #F1EFF6;}
+  table{width:100%;border-collapse:collapse;}
+  .pill{padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;display:inline-block;}
+  .nav{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:11px;font-size:14px;font-weight:600;color:rgba(255,255,255,.62);cursor:pointer;}
+  .nav.active{color:#fff;background:rgba(255,255,255,.12);}
+  .kpi{flex:1;border:1px solid #EEECF4;border-radius:14px;padding:14px 18px;background:#fff;min-width:130px;}
+  .card{border:1px solid #EEECF4;border-radius:18px;background:#fff;}
+  .inp{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:11px;font-size:14px;outline:none;}
+  .inp:focus{border-color:var(--mdlz);}
+  .btnp{border:none;border-radius:12px;background:var(--mdlz);color:#fff;font-weight:700;font-size:14px;padding:12px 18px;}
+  .chip{padding:6px 13px;border-radius:9px;font-weight:700;font-size:12.5px;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--label);}
+  .chip.on{background:var(--mdlz);color:#fff;border-color:var(--mdlz);}
+  .lbl{font-size:12.5px;font-weight:700;color:var(--label);}
+  .modal-bg{position:fixed;inset:0;background:rgba(20,10,40,.45);z-index:80;display:flex;align-items:center;justify-content:center;padding:20px;}
+  @media(max-width:900px){.hide-sm{display:none;}#sb{position:fixed;left:0;top:0;bottom:0;z-index:60;transform:translateX(-100%);transition:.2s;box-shadow:0 0 40px rgba(0,0,0,.3);}#sb.open{transform:translateX(0);}.mtop{display:flex!important;}.ovl.open{display:block!important;position:fixed;inset:0;z-index:55;background:rgba(20,10,40,.45);}}
+  .mtop{display:none;align-items:center;gap:12px;padding:12px 16px;background:var(--ink);color:#fff;}
+  .ovl{display:none;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="data.js"></script>
+<script>
+/* ===================== VERİ & DURUM ===================== */
+const DATA = (window.APP_DATA||[]);
+const DEPO_PASS = window.DEPO_PASS||{}, DEPO_NAME = window.DEPO_NAME||{};
+const PAGE = 20;
+const TESLIM=["Teslim Edildi","Mal Kabul"], YOLDA=["Dağıtımda","Depoya Gönderiliyor","Depoya İndi"], BEK=["Lojistik Bekleniyor","İşlemde"];
+const depoCodes = [...new Set(DATA.filter(d=>d.dk).map(d=>d.dk))];
+
+let USERS = [
+  {u:"irem.yalin",p:"IremAdmin2026!",ad:"İrem Yalın",rol:"MDLZ_ETKILI"},
+  {u:"gozlemci",p:"1234",ad:"Mondelez Gözlemci",rol:"MDLZ_GOZLEMCI"},
+  {u:"hale.basbug",p:"1234",ad:"Hale Başbuğ",rol:"MDLZ_ETKILI"},
+  {u:"yaren.akkoyun",p:"1234",ad:"Yaren Akkoyun",rol:"MDLZ_ETKILI"},
+  {u:"emrah.temiz",p:"1234",ad:"Emrah Temiz",rol:"MDLZ_GOZLEMCI"},
+  {u:"semih.seker",p:"1234",ad:"Semih Şeker",rol:"MDLZ_GOZLEMCI"},
+];
+let REQUESTS = []; // bilgi istekleri
+let LOGS = [];     // aktivite
+
+/* ---- Sahte aktivite/kullanım verisi (platform kullanımını göstermek için) ---- */
+function seeded(s){return function(){s=(s*9301+49297)%233280;return s/233280;};}
+const MOCK = (function(){
+  const rnd=seeded(1907);
+  const daily=[]; let base=1.6;
+  const start=new Date(2026,5,1), end=new Date(2026,6,20);
+  for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+    const dow=d.getDay(); let n;
+    if(dow===0){ n=0; }                                   // pazar sıfır
+    else { base += (rnd()<0.68?0.28:-0.12);                // kademeli artış, ara sıra düşüş
+           n=Math.max(0, Math.round(base + (rnd()*5-2.4))); }
+    daily.push({d:new Date(d), n});
+  }
+  const codes=[...new Set(DATA.filter(x=>x.dk).map(x=>x.dk))];
+  const entered=codes.slice(0,29);                        // 58 depodan 29'u giriş yaptı
+  // son 12 günün log satırları — YALNIZCA A101 depo girişleri
+  const rows=[];
+  for(let g=11; g>=0; g--){
+    const day=new Date(2026,6,20); day.setDate(day.getDate()-g);
+    if(day.getDay()===0) continue;
+    const cnt=2+Math.floor(rnd()*5);
+    for(let i=0;i<cnt;i++){
+      const t=new Date(day); t.setHours(8+Math.floor(rnd()*10), Math.floor(rnd()*60));
+      const dep=entered[Math.floor(rnd()*entered.length)];
+      rows.push({t, u:dep, olay:"giris", detay:"Depo girişi · A101 "+(DEPO_NAME[dep]||dep)});
+    }
+  }
+  rows.sort((a,b)=>b.t-a.t);
+  // Son depo girişleri: 15 rastgele (farklı) depo
+  const shuffled=[...entered].sort(()=>rnd()-0.5).slice(0,15);
+  const recent=shuffled.map((dep,i)=>{ const t=new Date(2026,6,20); t.setDate(t.getDate()-(i%6)); t.setHours(8+Math.floor(rnd()*10),Math.floor(rnd()*60)); return {t,u:dep,olay:"giris",detay:"Depo girişi · A101 "+(DEPO_NAME[dep]||dep)}; }).sort((a,b)=>b.t-a.t);
+  return {daily, entered, rows, recent, total:58};
+})();
+LOGS = MOCK.rows.slice();
+
+let S = {user:null, view:"panel", term:"", results:null, pg:0, filter:"Tümü", distSort:"atf", distPg:0, notifOpen:false};
+
+const el=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const roleLabel=r=>({MDLZ_ETKILI:"Mondelez · Etkili",MDLZ_GOZLEMCI:"Mondelez · Gözlemci",A101_DEPO:"A101 Depo"})[r]||r;
+const initials=n=>(n||"?").trim().split(/\s+/).map(x=>x[0]).slice(0,2).join("").toUpperCase();
+const isMdlz=()=>S.user&&S.user.rol.indexOf("MDLZ")===0;
+const isEtkili=()=>S.user&&S.user.rol==="MDLZ_ETKILI";
+const visible=()=>S.user.rol==="A101_DEPO"?DATA.filter(d=>d.dk===S.user.depo):DATA;
+function log(olay,detay){LOGS.unshift({t:new Date(),u:S.user?S.user.u:"-",olay,detay});}
+function pillStyle(a){const m={"Teslim Edildi":["#F4FBF7","#157F4B"],"Mal Kabul":["#F4FBF7","#157F4B"],"Depoya İndi":["#EDF7F1","#0F7A57"],"Dağıtımda":["#F3F8FF","#0A57C2"],"Depoya Gönderiliyor":["#F3F8FF","#0A57C2"]};const c=m[a]||["#F6F5FA","#6B6B78"];return `background:${c[0]};color:${c[1]};`;}
+function counts(rows){return{t:rows.filter(x=>TESLIM.includes(x.atf)).length,y:rows.filter(x=>YOLDA.includes(x.atf)).length,b:rows.filter(x=>BEK.includes(x.atf)).length};}
+
+/* ===================== LOGIN ===================== */
+function renderLogin(tab){
+  tab=tab||"mdlz"; const a101=tab==="a101", accent=a101?"var(--blue)":"var(--mdlz)";
+  el("app").innerHTML=`
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;background:radial-gradient(1200px 600px at 20% -10%,#EDE7F6,transparent 60%),radial-gradient(1000px 500px at 100% 110%,#E4EEFB,transparent 55%),#F4F3F7;">
+    <div style="width:900px;max-width:100%;display:flex;flex-wrap:wrap;background:#fff;border-radius:28px;overflow:hidden;box-shadow:0 40px 90px -40px rgba(45,25,80,.4);border:1px solid #EAE7F2;">
+      <div class="hide-sm" style="width:44%;padding:44px 38px;background:linear-gradient(150deg,#2B1B4D,#4B2E83 55%,#0A57C2 130%);color:#fff;display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:12px;"><span class="mono" style="font-weight:600;font-size:20px;">MDLZ</span><span style="color:rgba(255,255,255,.5);">×</span><span class="mono" style="font-weight:600;font-size:20px;color:#9EC3FF;">A101</span></div>
+        <div style="margin-top:auto;">
+          <div style="font-size:26px;font-weight:800;line-height:1.25;">Teslimat Takip Portalı</div>
+          <div style="font-size:14px;color:rgba(255,255,255,.8);margin-top:12px;line-height:1.6;">A101 (Yeni Mağazacılık) depolarının Mondelez siparişlerini takip ettiği kurumsal platform.</div>
+          <div style="display:flex;gap:8px;margin-top:22px;flex-wrap:wrap;"><span style="padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.12);font-size:12px;font-weight:600;">Mondelez CS&amp;L</span><span style="padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.12);font-size:12px;font-weight:600;">A101 Tedarik Zinciri</span></div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px;padding:44px 42px;">
+        <div style="font-size:22px;font-weight:800;">Giriş Yap</div>
+        <div style="font-size:13.5px;color:var(--muted);margin-top:4px;">Hesap tipinizi seçin</div>
+        <div style="display:flex;gap:8px;margin-top:22px;padding:5px;background:var(--bg);border-radius:14px;">
+          <button onclick="renderLogin('mdlz')" style="flex:1;padding:11px 0;border:none;border-radius:11px;font-weight:700;font-size:14px;${!a101?'background:#fff;color:var(--ink);box-shadow:0 2px 8px -3px rgba(45,25,80,.35);':'background:transparent;color:var(--muted);'}">🏢 Mondelez</button>
+          <button onclick="renderLogin('a101')" style="flex:1;padding:11px 0;border:none;border-radius:11px;font-weight:700;font-size:14px;${a101?'background:#fff;color:var(--ink);box-shadow:0 2px 8px -3px rgba(45,25,80,.35);':'background:transparent;color:var(--muted);'}">🏪 A101 Depo</button>
+        </div>
+        <div style="margin-top:24px;"><label class="lbl">${a101?"Depo Kodu":"Kullanıcı Adı"}</label>
+          <input id="lu" class="inp" style="margin-top:7px;" placeholder="${a101?depoCodes[0]:'irem.yalin'}"></div>
+        <div style="margin-top:16px;"><label class="lbl">Şifre</label>
+          <input id="lp" class="inp" style="margin-top:7px;" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin('${tab}')"></div>
+        <div id="lerr" style="color:var(--danger);font-size:13px;margin-top:12px;"></div>
+        <button onclick="doLogin('${tab}')" style="width:100%;margin-top:20px;padding:14px;border:none;border-radius:13px;background:${accent};color:#fff;font-weight:700;font-size:15px;">Giriş Yap →</button>
+        <div style="display:flex;justify-content:space-between;margin-top:18px;font-size:13px;"><span style="color:var(--mdlz);font-weight:600;cursor:pointer;">🔑 Şifre Talep / Değiştir</span><span style="color:var(--muted);font-weight:600;cursor:pointer;">❓ Yardım</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+function doLogin(tab){
+  const u=el("lu").value.trim(), p=el("lp").value;
+  if(tab==="a101"){
+    if(DEPO_PASS[u] && p===DEPO_PASS[u]){
+      const da="A101 "+(DEPO_NAME[u]||u);
+      S.user={u:u,ad:da,rol:"A101_DEPO",depo:u}; S.view="deliveries"; afterLogin(); return;
+    }
+    el("lerr").textContent="Depo kodu veya şifre hatalı"; return;
+  }
+  const f=USERS.find(x=>x.u===u&&x.p===p);
+  if(!f){el("lerr").textContent="Kullanıcı adı veya şifre hatalı";return;}
+  S.user=f; S.view="panel"; afterLogin();
+}
+function afterLogin(){S.results=null;S.term="";S.pg=0;log("giris","Başarılı giriş");renderApp();}
+function logout(){log("cikis","Çıkış");S.user=null;renderLogin();}
+
+/* ===================== APP SHELL ===================== */
+function renderApp(){
+  const M=["MDLZ_ETKILI","MDLZ_GOZLEMCI"];
+  const NAV=[
+    {v:"panel",i:"📊",l:"Panel",roles:M},
+    {v:"deliveries",i:"🔍",l:"Sipariş Sorgula"},
+    {v:"distribution",i:"🚚",l:"Dağıtımdakiler"},
+    {v:"reports",i:"📈",l:"Ürün Performansı",roles:M},
+    {v:"demand",i:"📉",l:"Demand Management",roles:M},
+    {v:"depoperf",i:"🏬",l:"Depo Performans",roles:M},
+    {v:"import",i:"⬆️",l:"Veri Yükle",roles:["MDLZ_ETKILI"]},
+    {v:"requests",i:"📬",l:"Bilgi İstekleri"},
+    {v:"users",i:"👥",l:"Kullanıcı Yönetimi",roles:["MDLZ_ETKILI"]},
+    {v:"activity",i:"📋",l:"Aktivite",roles:M},
+  ].filter(n=>!n.roles||n.roles.includes(S.user.rol));
+  const nav=NAV.map(n=>`<div class="nav ${S.view===n.v?'active':''}" onclick="go('${n.v}')"><span style="width:20px;text-align:center;">${n.i}</span><span style="flex:1;">${n.l}</span></div>`).join("");
+  const titles={panel:["Panel","Genel durum ve performans özeti"],deliveries:["Sipariş Sorgula","PO, teslimat no veya fatura no ile arayın (toplu)"],distribution:["Dağıtımdaki Siparişler","Filtrele: depo, ürün, ATF durum, teslimat no"],reports:["Ürün Performansı","Ürün bazında talep, karşılama ve dağılım"],demand:["Demand Management","CFR uyarıları, top ürünler ve depo doluluk oranları"],depoperf:["Depo Performans","Seçilen deponun sipariş ve teslimat performansı"],import:["Günlük Veri Yükle","SAP ve Omnia çıktılarını yükleyin"],requests:["Bilgi İstekleri","Depolardan gelen notlar ve talepler"],users:["Kullanıcı Yönetimi","Kayıtlı kullanıcılar ve rol atamaları"],activity:["Aktivite Logları","Giriş, sorgu ve platform kullanım kayıtları"]};
+  const t=titles[S.view]||["",""];
+  const infoCard=isMdlz()?`<div style="margin-top:auto;padding:14px;border-radius:14px;background:rgba(255,255,255,.06);"><div style="font-size:11.5px;color:rgba(255,255,255,.5);font-weight:600;">Son veri yüklemesi</div><div class="mono" style="font-size:13px;color:#fff;margin-top:3px;">22.06 · 09:42</div><div style="font-size:11.5px;color:#8FB8FF;margin-top:2px;">SAP + Omnia birleşti ✓</div></div>`:"";
+  const infoBtn=S.user.rol==="A101_DEPO"?`<button onclick="go('requests')" style="border:none;padding:9px 16px;border-radius:11px;background:#EDE7F6;color:var(--mdlz);font-weight:700;font-size:13px;">📬 Bilgi İsteği Gönder</button>`:"";
+  const nCount=isMdlz()?REQUESTS.filter(r=>r.durum==="yeni").length:0;
+  el("app").innerHTML=`
+  <div style="display:flex;height:100vh;overflow:hidden;">
+    <div class="mtop"><button onclick="document.getElementById('sb').classList.add('open');document.getElementById('ovl').classList.add('open');" style="background:transparent;border:none;color:#fff;font-size:22px;">☰</button><span class="mono" style="font-weight:600;">MDLZ</span><span style="color:rgba(255,255,255,.45);">×</span><span class="mono" style="font-weight:600;color:#8FB8FF;">A101</span></div>
+    <div id="ovl" class="ovl" onclick="document.getElementById('sb').classList.remove('open');this.classList.remove('open');"></div>
+    <aside id="sb" style="width:238px;flex:0 0 auto;background:var(--ink);padding:22px 15px;display:flex;flex-direction:column;gap:3px;">
+      <div style="display:flex;align-items:center;gap:9px;padding:4px 10px 18px;"><span class="mono" style="font-weight:600;font-size:16px;color:#fff;">MDLZ</span><span style="color:rgba(255,255,255,.45);">×</span><span class="mono" style="font-weight:600;font-size:16px;color:#8FB8FF;">A101</span></div>
+      <div style="display:flex;flex-direction:column;gap:3px;flex:1;">${nav}</div>${infoCard}
+    </aside>
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
+      <header style="display:flex;align-items:center;justify-content:space-between;padding:16px 30px;border-bottom:1px solid var(--soft);background:#fff;position:relative;">
+        <div><div style="font-size:19px;font-weight:800;">${t[0]}</div><div class="hide-sm" style="font-size:13px;color:var(--muted);margin-top:2px;">${t[1]}</div></div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${infoBtn}
+          <button onclick="S.notifOpen=!S.notifOpen;renderApp();" style="position:relative;border:1px solid var(--border);background:#fff;width:40px;height:40px;border-radius:11px;font-size:16px;">🔔${nCount?`<span style="position:absolute;top:-5px;right:-5px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;">${nCount}</span>`:""}</button>
+          <div style="display:flex;align-items:center;gap:9px;padding:6px 13px;border-radius:12px;background:var(--bg);">
+            <span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#4B2E83,#0A57C2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">${initials(S.user.ad)}</span>
+            <div class="hide-sm"><div style="font-size:12.5px;font-weight:700;line-height:1.1;">${esc(S.user.ad)}</div><div style="font-size:11px;color:var(--muted);">${roleLabel(S.user.rol)}</div></div>
+          </div>
+          <button onclick="logout()" style="border:1px solid var(--border);background:#fff;padding:9px 14px;border-radius:11px;font-size:13px;font-weight:600;color:var(--label);">Çıkış</button>
+        </div>
+        ${S.notifOpen?notifDropdown():""}
+      </header>
+      <main id="content" style="flex:1;overflow-y:auto;padding:26px 30px;"></main>
+    </div>
+  </div>`;
+  renderView();
+}
+function notifDropdown(){
+  let items;
+  if(isMdlz()){const rs=REQUESTS.slice(0,5); items=rs.length?rs.map(r=>`<div style="display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid #F4F2F8;"><span>📬</span><div><div style="font-size:13px;">${esc(r.depo)} — ${esc(r.not)}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px;">${r.t.toLocaleString('tr-TR')}</div></div></div>`).join(""):`<div style="padding:18px;color:var(--muted);font-size:13px;">Yeni bildirim yok.</div>`;}
+  else items=`<div style="padding:18px;color:var(--muted);font-size:13px;">Bildirim yok.</div>`;
+  return `<div style="position:absolute;top:60px;right:90px;width:300px;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 20px 50px -20px rgba(45,25,80,.35);z-index:40;overflow:hidden;"><div style="padding:12px 16px;font-weight:700;border-bottom:1px solid var(--soft);">Bildirimler</div>${items}</div>`;
+}
+function go(v){S.notifOpen=false;S.view=v;if(v!=='deliveries'){S.results=null;S.term="";}renderApp();}
+
+/* ===================== VIEWS ===================== */
+function renderView(){({panel:vPanel,deliveries:vDeliveries,distribution:vDist,reports:vReports,demand:vDemand,depoperf:vDepoPerf,import:vImport,requests:vRequests,users:vUsers,activity:vActivity}[S.view]||vPanel)();}
+
+function kpiCard(l,v,color,bg){return `<div class="kpi" ${bg?`style="background:${bg};"`:""}><div style="font-size:11.5px;color:${color||'var(--muted)'};font-weight:700;">${l}</div><div style="font-size:22px;font-weight:800;color:${color||'var(--ink)'};">${v}</div></div>`;}
+
+/* --- PANEL --- */
+function vPanel(){
+  const d=visible(), c=counts(d);
+  const dist={}; d.forEach(x=>dist[x.atf]=(dist[x.atf]||0)+1);
+  const order=["Teslim Edildi","Dağıtımda","Depoya İndi","Depoya Gönderiliyor","Mal Kabul","İşlemde","Lojistik Bekleniyor"].filter(k=>dist[k]);
+  const max=Math.max(...Object.values(dist),1);
+  const bars=order.map(k=>`<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px;"><span style="font-weight:600;">${k}</span><span class="mono" style="color:var(--muted);">${dist[k]} · %${Math.round(dist[k]/d.length*100)}</span></div><div style="height:10px;background:#F1EFF6;border-radius:6px;overflow:hidden;"><div style="height:100%;width:${Math.round(dist[k]/max*100)}%;background:linear-gradient(90deg,#4B2E83,#0A57C2);"></div></div></div>`).join("");
+  el("content").innerHTML=`
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;">
+      ${kpiCard("Toplam Sipariş Satırı",d.length)}
+      ${kpiCard("Teslim Edildi",c.t,"#157F4B","#F4FBF7")}
+      ${kpiCard("Yolda / Dağıtımda",c.y,"#0A57C2","#F3F8FF")}
+      ${kpiCard("Lojistik Bilgi Yok",c.b,"#6B6B78")}
+    </div>
+    <div class="card" style="padding:22px 24px;max-width:760px;"><div style="font-weight:800;font-size:15px;margin-bottom:16px;">📊 ATF Durum Dağılımı</div>${bars}</div>`;
+}
+function cfrByDepo(rows){const a={};rows.forEach(x=>{const k=x.dk||"—";(a[k]=a[k]||{dk:k,da:x.da,sip:0,kon:0});a[k].sip+=x.sip;a[k].kon+=x.kon;});return Object.values(a).map(x=>({...x,cfr:x.sip?Math.round(1000*x.kon/x.sip)/10:0})).sort((p,q)=>p.cfr-q.cfr);}
+
+/* --- DEMAND MANAGEMENT (CFR uyarıları + top ürünler + depo CFR) --- */
+function vDemand(){
+  const d=visible();
+  const cfrAll=cfrByDepo(d);
+  const warn=cfrAll.filter(x=>x.cfr<90);
+  const warnRows=warn.slice(0,10).map(x=>`<tr><td class="mono">${esc(x.dk)}</td><td>${esc(x.da)}</td><td style="text-align:right;font-weight:700;color:var(--danger);padding-right:20px;">%${x.cfr}</td></tr>`).join("")||`<tr><td colspan="3" style="color:var(--muted);padding:16px;">%90 altı depo yok 👍</td></tr>`;
+  const prod={}; d.forEach(x=>{if(x.u)prod[x.u]=(prod[x.u]||0)+x.kon;});
+  const top=Object.entries(prod).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const topRows=top.map(([u,k])=>`<tr><td style="font-weight:500;">${esc(u)}</td><td class="mono" style="text-align:right;padding-right:20px;">${Math.round(k)}</td></tr>`).join("");
+  const allRows=cfrAll.map(x=>`<tr><td class="mono">${esc(x.dk)}</td><td>${esc(x.da)}</td><td class="mono" style="text-align:center;">${Math.round(x.sip)}</td><td class="mono" style="text-align:center;">${Math.round(x.kon)}</td><td style="text-align:center;"><span class="pill" style="${x.cfr<90?'background:#FDECEA;color:#E0483C;':'background:#F4FBF7;color:#157F4B;'}">%${x.cfr}</span></td></tr>`).join("");
+  el("content").innerHTML=`
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;">
+      <div class="card" style="flex:1;min-width:320px;overflow:hidden;"><div style="padding:16px 20px;font-weight:800;font-size:15px;border-bottom:1px solid #F1EFF6;color:var(--danger);">⚠️ CFR Uyarıları <span style="font-weight:400;color:var(--muted);font-size:13px;">%90 altı (${warn.length} depo)</span></div><table><thead><tr><th style="padding-left:20px;">Kod</th><th>Depo</th><th style="text-align:right;padding-right:20px;">CFR</th></tr></thead><tbody>${warnRows}</tbody></table></div>
+      <div class="card" style="flex:1;min-width:300px;overflow:hidden;"><div style="padding:16px 20px;font-weight:800;font-size:15px;border-bottom:1px solid #F1EFF6;">🏆 Top Ürünler <span style="font-weight:400;color:var(--muted);font-size:13px;">konfirme koli</span></div><table><tbody>${topRows}</tbody></table></div>
+    </div>
+    <div class="card" style="overflow:hidden;"><div style="padding:16px 20px;font-weight:800;font-size:15px;border-bottom:1px solid #F1EFF6;">Depo Bazında Doluluk (CFR)</div><div style="overflow-x:auto;"><table style="min-width:600px;"><thead><tr style="background:#FAFAFC;"><th style="padding-left:20px;">Kod</th><th>Depo</th><th style="text-align:center;">Sip. Koli</th><th style="text-align:center;">Konf. Koli</th><th style="text-align:center;">CFR</th></tr></thead><tbody>${allRows}</tbody></table></div></div>`;
+}
+
+/* --- DEPO PERFORMANS (seçilen depo detayı) --- */
+function vDepoPerf(){
+  const depos=cfrByDepo(DATA); // her depo
+  if(!S.perfDepo) S.perfDepo=depos[depos.length-1].dk; // varsayılan: en yüksek CFR
+  const opts=depos.slice().sort((a,b)=>(a.da||"").localeCompare(b.da||"")).map(x=>`<option value="${x.dk}" ${S.perfDepo===x.dk?'selected':''}>${esc(x.da)} (${x.dk})</option>`).join("");
+  const rows=DATA.filter(x=>x.dk===S.perfDepo);
+  const c=counts(rows);
+  const info=depos.find(x=>x.dk===S.perfDepo)||{cfr:0,sip:0,kon:0};
+  const recent=rows.filter(x=>x.del).slice(0,12).map(d=>`<tr><td class="mono" style="color:#1A1A22;">${esc(d.del)}</td><td style="font-weight:500;">${esc(d.u)}</td><td class="mono" style="text-align:center;">${d.sip}</td><td class="mono" style="text-align:center;">${d.kon}</td><td><span class="pill" style="${pillStyle(d.atf)}">${d.ic} ${d.atf}</span></td><td>${esc(d.eta)||"—"}</td></tr>`).join("")||`<tr><td colspan="6" style="color:var(--muted);padding:18px;text-align:center;">Teslimat kaydı yok.</td></tr>`;
+  const cfrColor=info.cfr<90?"#E0483C":"#157F4B";
+  el("content").innerHTML=`
+    <div style="margin-bottom:16px;"><label class="lbl">Depo Seç</label><br><select class="inp" style="max-width:420px;margin-top:6px;" onchange="S.perfDepo=this.value;vDepoPerf();">${opts}</select></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;">
+      ${kpiCard("CFR Doluluk Oranı","%"+info.cfr,cfrColor,info.cfr<90?"#FDECEA":"#F4FBF7")}
+      ${kpiCard("Toplam Satır",rows.length)}
+      ${kpiCard("Teslim Edildi",c.t,"#157F4B","#F4FBF7")}
+      ${kpiCard("Yolda",c.y,"#0A57C2","#F3F8FF")}
+      ${kpiCard("Bekleyen",c.b,"#6B6B78")}
+    </div>
+    <div class="card" style="overflow:hidden;"><div style="padding:16px 20px;font-weight:800;font-size:15px;border-bottom:1px solid #F1EFF6;">Son Siparişler</div><div style="overflow-x:auto;"><table style="min-width:720px;"><thead><tr style="background:#FAFAFC;"><th style="padding-left:20px;">Teslimat No</th><th>Ürün</th><th style="text-align:center;">Sip</th><th style="text-align:center;">Konf</th><th>ATF Durum</th><th>Tahmini Teslimat</th></tr></thead><tbody>${recent}</tbody></table></div></div>`;
+}
+function brandOf(u){if(!u)return "Diğer";const first=String(u).trim().split(/\s+/)[0].toUpperCase();const map={"MKA":"MİLKA","MILKA":"MİLKA","OLP":"OLIPS","OLIPS":"OLIPS","7D":"7DAYS","7DAYS":"7DAYS","TFT":"TRIDENT","TRIDENT":"TRIDENT","FALIM":"FALIM","FIRST":"FIRST","TONE":"TONE","BNB":"BONİBON","BNB24":"BONİBON","OREO":"OREO","KENT":"KENT","OLİPS":"OLIPS"};return map[first]||first;}
+
+/* --- SORGU --- */
+function vDeliveries(){
+  el("content").innerHTML=`
+    <div class="card" style="padding:20px 22px;margin-bottom:16px;">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:10px;">PO, teslimat (Delivery) veya fatura (Billing) numarası ile sorgulayın. <b>Toplu arama:</b> birden çok numarayı alt alta veya virgülle yapıştırın.</div>
+      <textarea id="q" class="inp mono" style="min-height:70px;resize:vertical;font-size:14px;" placeholder="9308860050&#10;9308861080&#10;2149903135-S_60S">${esc(S.term)}</textarea>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <button class="btnp" style="background:var(--blue);border-radius:12px;padding:11px 26px;" onclick="runSearch()">🔍 Sorgula</button>
+        <button class="chip" style="border-radius:12px;padding:11px 20px;" onclick="S.term='';S.results=null;vDeliveries();">Temizle</button>
+      </div>
+    </div><div id="res"></div>`;
+  if(S.results)renderResults();
+}
+function runSearch(){
+  const raw=(el("q").value||"").trim();S.term=raw;S.pg=0;S.filter="Tümü";
+  if(!raw){S.results=null;return vDeliveries();}
+  const set=new Set(raw.split(/[\s,;]+/).map(t=>t.trim().toLowerCase()).filter(Boolean));
+  S.results=visible().filter(d=>(d.po&&set.has(d.po.toLowerCase()))||(d.del&&set.has(d.del.toLowerCase()))||(d.bill&&set.has(d.bill.toLowerCase())));
+  log("sorgulama",set.size+" numara sorgulandı");
+  renderResults();
+}
+function renderResults(){
+  const all=S.results; if(all.length===0){el("res").innerHTML=`<div style="color:var(--muted);padding:24px;text-align:center;">Kayıt bulunamadı.</div>`;return;}
+  const c=counts(all);
+  let r=all; if(S.filter!=="Tümü"){const map={"Teslim":TESLIM,"Yolda":YOLDA,"Bekleyen":BEK};r=all.filter(x=>map[S.filter].includes(x.atf));}
+  const pages=Math.ceil(r.length/PAGE), pg=Math.min(S.pg,pages-1), slice=r.slice(pg*PAGE,pg*PAGE+PAGE);
+  const rows=slice.map(d=>`<tr><td class="mono" style="color:#1A1A22;">${esc(d.del)||"—"}</td><td>${esc(d.da)||esc(d.dk)}</td><td style="color:#1A1A22;font-weight:500;">${esc(d.u)}</td><td class="mono" style="text-align:center;">${d.sip}</td><td class="mono" style="text-align:center;">${d.kon}</td><td><span class="pill" style="${pillStyle(d.atf)}">${d.ic} ${d.atf}</span></td><td class="mono">${esc(d.pl)||"—"}</td><td>${esc(d.eta)||"—"}</td></tr>`).join("");
+  const chips=["Tümü","Teslim","Yolda","Bekleyen"].map(f=>`<span class="chip ${S.filter===f?'on':''}" onclick="S.filter='${f}';S.pg=0;renderResults();">${f}</span>`).join("");
+  el("res").innerHTML=`
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px;">${kpiCard("BULUNAN",all.length)}${kpiCard("TESLİM",c.t,"#157F4B","#F4FBF7")}${kpiCard("YOLDA",c.y,"#0A57C2","#F3F8FF")}${kpiCard("BEKLEYEN",c.b,"#6B6B78")}</div>
+    <div class="card" style="overflow:hidden;">
+      <div style="padding:14px 20px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #F1EFF6;flex-wrap:wrap;">${chips}<span onclick="exportCSV()" class="chip" style="margin-left:auto;background:#EDE7F6;color:var(--mdlz);border:none;">📥 Excel (CSV) İndir</span></div>
+      <div style="overflow-x:auto;"><table style="min-width:820px;"><thead><tr style="background:#FAFAFC;"><th style="padding-left:20px;">Teslimat No</th><th>Depo</th><th>Ürün</th><th style="text-align:center;">Sip</th><th style="text-align:center;">Konf</th><th>ATF Durum</th><th>Plaka</th><th>Teslimat</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${pager(pages,pg,'S.pg=P;renderResults();',r.length)}
+    </div>`;
+}
+function exportCSV(){
+  const rows=S.results||[]; const head=["Teslimat No","Fatura No","PO","Depo Kodu","Depo","Ürün","Sipariş","Konfirme","ATF Durum","Plaka","Tahmini Teslimat"];
+  const body=rows.map(d=>[d.del,d.bill,d.po,d.dk,d.da,d.u,d.sip,d.kon,d.atf,d.pl,d.eta].map(v=>`"${(v==null?'':v).toString().replace(/"/g,'""')}"`).join(";"));
+  const csv="﻿"+[head.join(";"),...body].join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="sorgu-sonuc.csv";a.click();
+}
+
+/* --- DAĞITIMDAKİLER (filtreli, odak korunur) --- */
+function vDist(){
+  if(S.distAtf===undefined)S.distAtf="Yoldakiler";
+  if(!S.distDepo)S.distDepo="Tümü";
+  const base=visible();
+  const depos=[...new Map(base.filter(x=>x.dk).map(x=>[x.dk,x.da])).entries()].sort((a,b)=>(a[1]||"").localeCompare(b[1]||""));
+  const depoOpts=`<option value="Tümü">Tüm Depolar</option>`+depos.map(([k,v])=>`<option value="${k}" ${S.distDepo===k?'selected':''}>${esc(v)}</option>`).join("");
+  const atfList=["Yoldakiler","Tümü","Dağıtımda","Depoya Gönderiliyor","Depoya İndi","Teslim Edildi","Mal Kabul","Lojistik Bekleniyor","İşlemde"];
+  const atfOpts=atfList.map(a=>`<option value="${a}" ${S.distAtf===a?'selected':''}>${a}</option>`).join("");
+  el("content").innerHTML=`
+    <div class="card" style="padding:16px 20px;margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+      <div><label class="lbl">Depo</label><br><select class="inp" style="margin-top:6px;min-width:180px;" onchange="S.distDepo=this.value;S.distPg=0;distApply();">${depoOpts}</select></div>
+      <div><label class="lbl">ATF Durum</label><br><select class="inp" style="margin-top:6px;" onchange="S.distAtf=this.value;S.distPg=0;distApply();">${atfOpts}</select></div>
+      <div style="flex:1;min-width:150px;"><label class="lbl">Ürün Ara</label><br><input class="inp" style="margin-top:6px;" value="${esc(S.distProd||'')}" placeholder="ürün..." oninput="S.distProd=this.value;S.distPg=0;distApply();"></div>
+      <div style="flex:1;min-width:150px;"><label class="lbl">Teslimat No</label><br><input class="inp mono" style="margin-top:6px;" value="${esc(S.distNo||'')}" placeholder="teslimat no..." oninput="S.distNo=this.value;S.distPg=0;distApply();"></div>
+    </div>
+    <div id="distbox"></div>`;
+  distApply();
+}
+function distApply(){
+  const base=visible();
+  let r=base.slice();
+  if(S.distAtf==="Yoldakiler")r=r.filter(x=>YOLDA.includes(x.atf));
+  else if(S.distAtf!=="Tümü")r=r.filter(x=>x.atf===S.distAtf);
+  if(S.distDepo!=="Tümü")r=r.filter(x=>x.dk===S.distDepo);
+  if(S.distProd)r=r.filter(x=>(x.u||"").toLowerCase().includes(S.distProd.toLowerCase()));
+  if(S.distNo)r=r.filter(x=>(x.del||"").includes(S.distNo)||(x.bill||"").includes(S.distNo));
+  const sorts={atf:(a,b)=>a.atf.localeCompare(b.atf),urun:(a,b)=>(a.u||"").localeCompare(b.u||""),koli:(a,b)=>b.kon-a.kon,eta:(a,b)=>(a.eta||"").localeCompare(b.eta||"")};
+  r=[...r].sort(sorts[S.distSort]);
+  const pages=Math.ceil(r.length/PAGE)||1, pg=Math.min(S.distPg,pages-1), slice=r.slice(pg*PAGE,pg*PAGE+PAGE);
+  const rows=slice.map(d=>`<tr><td class="mono" style="color:#1A1A22;">${esc(d.del)||"—"}</td><td>${esc(d.da)}</td><td style="font-weight:500;">${esc(d.u)}</td><td class="mono" style="text-align:center;">${d.kon}</td><td><span class="pill" style="${pillStyle(d.atf)}">${d.ic} ${d.atf}</span></td><td class="mono">${esc(d.pl)||"—"}</td><td>${esc(d.eta)||"—"}</td></tr>`).join("")||`<tr><td colspan="7" style="color:var(--muted);padding:20px;text-align:center;">Kayıt bulunamadı.</td></tr>`;
+  const opt=(v,l)=>`<option value="${v}" ${S.distSort===v?'selected':''}>${l}</option>`;
+  el("distbox").innerHTML=`<div class="card" style="overflow:hidden;">
+      <div style="padding:14px 20px;border-bottom:1px solid #F1EFF6;display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span style="font-weight:700;">${r.length} kayıt</span><select class="chip" style="margin-left:auto;" onchange="S.distSort=this.value;S.distPg=0;distApply();">${opt('atf','ATF Durumuna Göre')}${opt('urun','Ürüne Göre (A→Z)')}${opt('koli','Koli (Çok→Az)')}${opt('eta','Tahmini Teslimat')}</select></div>
+      <div style="overflow-x:auto;"><table style="min-width:760px;"><thead><tr style="background:#FAFAFC;"><th style="padding-left:20px;">Teslimat No</th><th>Depo</th><th>Ürün</th><th style="text-align:center;">Konf</th><th>ATF Durum</th><th>Plaka</th><th>Tahmini Teslimat</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${pager(pages,pg,'S.distPg=P;distApply();',r.length)}</div>`;
+}
+
+/* --- ÜRÜN PERFORMANSI (ürün bazlı, kategorili, filtrelenebilir) --- */
+function prodAgg(rows){
+  const m={};
+  rows.forEach(x=>{
+    if(!x.u) return;
+    const p=(m[x.u]=m[x.u]||{u:x.u,cat:brandOf(x.u),sip:0,kon:0,reached:new Set(),missed:new Set()});
+    p.sip+=x.sip; p.kon+=x.kon;
+    if(x.dk){ if(x.kon>0) p.reached.add(x.dk); else if(x.sip>0) p.missed.add(x.dk); }
+  });
+  return Object.values(m).map(p=>({...p,cfr:p.sip?Math.round(1000*p.kon/p.sip)/10:0,reachedN:p.reached.size,missedN:[...p.missed].filter(d=>!p.reached.has(d)).length}));
+}
+function vReports(){
+  if(!S.prodCat)S.prodCat="Tümü";
+  const cats=["Tümü",...[...new Set(prodAgg(visible()).map(p=>p.cat))].sort()];
+  const catOpts=cats.map(c=>`<option value="${esc(c)}" ${S.prodCat===c?'selected':''}>${esc(c)}</option>`).join("");
+  el("content").innerHTML=`
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:end;">
+      <div><label class="lbl">Kategori</label><br><select class="inp" style="margin-top:6px;min-width:180px;" onchange="S.prodCat=this.value;S.prodExpand=null;prodApply();">${catOpts}</select></div>
+      <div style="flex:1;min-width:200px;"><label class="lbl">Ürün Ara</label><br><input class="inp" style="margin-top:6px;" value="${esc(S.prodQ||'')}" placeholder="ürün adı..." oninput="S.prodQ=this.value;S.prodExpand=null;prodApply();"></div>
+      <div id="prodcount" style="color:var(--muted);font-size:12.5px;padding-bottom:12px;"></div>
+    </div>
+    <div id="prodbox"></div>`;
+  prodApply();
+}
+function prodApply(){
+  let f=prodAgg(visible());
+  if(S.prodCat && S.prodCat!=="Tümü")f=f.filter(p=>p.cat===S.prodCat);
+  if(S.prodQ)f=f.filter(p=>p.u.toLowerCase().includes(S.prodQ.toLowerCase()));
+  f=f.sort((a,b)=>b.sip-a.sip);
+  if(el("prodcount"))el("prodcount").textContent=f.length+" ürün";
+  const rows=f.map(p=>{
+    const w=p.cfr<90, id=p.u.replace(/'/g,"");
+    const detail=S.prodExpand===p.u?`<tr><td colspan="6" style="background:#FAF9FC;padding:12px 20px;font-size:12.5px;color:var(--label);"><b>Gittiği depolar (${p.reachedN}):</b> ${[...p.reached].join(", ")||"—"}<br><b style="color:var(--danger);">Karşılanmayan (${p.missedN}):</b> ${[...p.missed].filter(x=>!p.reached.has(x)).join(", ")||"—"}</td></tr>`:"";
+    return `<tr style="cursor:pointer;" onclick="S.prodExpand=(S.prodExpand==='${id}'?null:'${id}');prodApply();"><td style="font-weight:500;color:#1A1A22;">${esc(p.u)}</td><td><span class="pill" style="background:#EDE7F6;color:#4B2E83;">${esc(p.cat)}</span></td><td class="mono" style="text-align:center;">${Math.round(p.sip)}</td><td class="mono" style="text-align:center;">${Math.round(p.kon)}</td><td style="text-align:center;"><span class="pill" style="${w?'background:#FDECEA;color:#E0483C;':'background:#F4FBF7;color:#157F4B;'}">%${p.cfr}</span></td><td class="mono" style="text-align:center;">${p.reachedN}${p.missedN?` <span style="color:var(--danger);">(-${p.missedN})</span>`:""}</td></tr>${detail}`;
+  }).join("")||`<tr><td colspan="6" style="color:var(--muted);padding:20px;text-align:center;">Ürün bulunamadı.</td></tr>`;
+  el("prodbox").innerHTML=`<div class="card" style="overflow:hidden;"><div style="padding:14px 20px;border-bottom:1px solid #F1EFF6;font-size:12.5px;color:var(--muted);">Satıra tıklayarak ürünün gittiği ve karşılanmayan depoları görebilirsiniz.</div>
+    <div style="overflow-x:auto;"><table style="min-width:720px;"><thead><tr style="background:#FAFAFC;"><th style="padding-left:20px;">Ürün</th><th>Kategori</th><th style="text-align:center;">İstenen (koli)</th><th style="text-align:center;">Karşılanan</th><th style="text-align:center;">CFR</th><th style="text-align:center;">Gittiği Depo</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* --- VERİ YÜKLE --- */
+function vImport(){
+  el("content").innerHTML=`<div style="max-width:720px;">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      ${dropCard("📋","SAP Verisi","ZNMOTC çıktısı · .xlsx")}
+      ${dropCard("🚚","Omnia Verisi","ATF + Sistem No · .xlsx")}
+    </div>
+    <button class="btnp" style="margin-top:18px;background:var(--blue);">🔄 Veriyi İşle ve Güncelle</button>
+    <div class="card" style="margin-top:18px;padding:18px 20px;color:var(--label);font-size:13.5px;line-height:1.7;">Bu HTML sürümünde <b>A101 (Yeni Mağazacılık)</b> verisi (${DATA.length} satır, ${depoCodes.length} depo) uygulamaya gömülüdür ve SAP + Omnia birleştirmesi hazır haldedir. Canlı sistemde bu ekrandan günlük Excel'ler yüklenir, sunucu birleştirip veritabanını günceller.</div>
+  </div>`;
+}
+function dropCard(i,t,h){return `<label style="flex:1;min-width:220px;border:1.5px dashed var(--border);border-radius:16px;background:#fff;padding:26px 20px;text-align:center;cursor:pointer;display:block;"><div style="font-size:30px;">${i}</div><div style="font-weight:700;margin-top:8px;">${t}</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px;">${h}</div><div style="font-size:12.5px;color:var(--mdlz);margin-top:10px;font-weight:600;">Dosya seç veya sürükle</div></label>`;}
+
+/* --- BİLGİ İSTEKLERİ --- */
+function vRequests(){
+  if(S.user.rol==="A101_DEPO"){
+    el("content").innerHTML=`<div class="card" style="max-width:560px;padding:24px;">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px;">📬 Bilgi İsteği Gönder</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px;">Mondelez ekibine not iletin.</div>
+      <div id="rok"></div>
+      <label class="lbl">Sipariş / Teslimat No</label><input id="rno" class="inp" style="margin-top:6px;margin-bottom:12px;" placeholder="opsiyonel">
+      <label class="lbl">Notunuz</label><textarea id="rmsg" class="inp" style="margin-top:6px;min-height:100px;"></textarea>
+      <button class="btnp" style="margin-top:14px;" onclick="sendReq()">Gönder →</button>
+    </div>`; return;
+  }
+  const rows=REQUESTS.map(r=>`<div style="padding:16px 22px;border-top:1px solid #F1EFF6;display:flex;gap:14px;"><span class="mono" style="width:auto;min-width:60px;height:38px;padding:0 8px;border-radius:10px;background:#EDE7F6;color:var(--mdlz);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:0 0 auto;">${esc(r.depoKodu||"—")}</span><div style="flex:1;"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-weight:700;font-size:13.5px;">${esc(r.depo)}</span>${r.no?`<span class="mono" style="font-size:11.5px;color:var(--muted);">${esc(r.no)}</span>`:""}${r.durum==="yeni"?`<span style="font-size:10.5px;font-weight:700;color:var(--danger);background:#FDECEA;padding:1px 7px;border-radius:999px;">yeni</span>`:""}</div><div style="font-size:13px;color:var(--label);margin-top:3px;">${esc(r.not)}</div></div><span style="font-size:11.5px;color:#B0AAC0;white-space:nowrap;">${r.t.toLocaleString('tr-TR')}</span></div>`).join("")||`<div style="padding:24px;color:var(--muted);text-align:center;">Henüz istek yok.</div>`;
+  el("content").innerHTML=`<div class="card" style="max-width:780px;overflow:hidden;"><div style="padding:16px 22px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #F1EFF6;"><div style="font-weight:800;font-size:15px;">📬 Gelen Bilgi İstekleri</div><span style="padding:4px 12px;border-radius:999px;background:#FDECEA;color:var(--danger);font-weight:700;font-size:12px;">${REQUESTS.length} kayıt</span></div>${rows}</div>`;
+}
+function sendReq(){const no=el("rno").value.trim(),msg=el("rmsg").value.trim();if(!msg){el("rok").innerHTML=`<div class="error" style="color:var(--danger);margin-bottom:10px;">Not zorunlu</div>`;return;}REQUESTS.unshift({depo:S.user.ad,depoKodu:S.user.depo,no,not:msg,durum:"yeni",t:new Date()});log("bilgi_istegi","İstek: "+no);el("rok").innerHTML=`<div style="color:var(--green);font-weight:600;margin-bottom:10px;">İsteğiniz iletildi ✓</div>`;el("rno").value="";el("rmsg").value="";}
+
+/* --- KULLANICI YÖNETİMİ --- */
+function vUsers(){
+  const list=USERS.map(u=>`<tr><td class="mono" style="color:#1A1A22;">${esc(u.u)}${u.u===S.user.u?' <span style="color:var(--muted);">(sen)</span>':''}</td><td>${esc(u.ad)}</td><td>${roleLabel(u.rol)}</td><td class="mono">${esc(u.depo)||"—"}</td><td style="text-align:right;white-space:nowrap;">${u.u===S.user.u?'':`<button class="chip" style="color:var(--danger);border-color:#F3C9C6;" onclick="delUser('${u.u}')">Sil</button>`}</td></tr>`).join("");
+  el("content").innerHTML=`
+    <div class="card" style="padding:20px 22px;margin-bottom:18px;">
+      <div style="font-weight:800;font-size:15px;margin-bottom:14px;">➕ Yeni Kullanıcı Ekle</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end;">
+        <div><label class="lbl">Kullanıcı Adı</label><input id="nu" class="inp" style="margin-top:6px;"></div>
+        <div><label class="lbl">Ad Soyad</label><input id="nad" class="inp" style="margin-top:6px;"></div>
+        <div><label class="lbl">Şifre</label><input id="np" class="inp" style="margin-top:6px;" type="password"></div>
+        <div><label class="lbl">Rol</label><select id="nr" class="inp" style="margin-top:6px;" onchange="el('ndw').style.display=this.value==='A101_DEPO'?'block':'none';"><option value="A101_DEPO">A101 Depo</option><option value="MDLZ_GOZLEMCI">Mondelez – Gözlemci</option><option value="MDLZ_ETKILI">Mondelez – Etkili</option></select></div>
+        <div id="ndw"><label class="lbl">Depo Kodu</label><input id="nd" class="inp" style="margin-top:6px;"></div>
+        <button class="btnp" onclick="addUser()">Ekle</button>
+      </div>
+      <div id="uok" style="margin-top:10px;"></div>
+    </div>
+    <div class="card" style="overflow:hidden;"><div style="overflow-x:auto;"><table style="min-width:640px;"><thead><tr style="background:#FAFAFC;"><th style="padding-left:20px;">Kullanıcı Adı</th><th>Ad Soyad</th><th>Rol</th><th>Depo</th><th></th></tr></thead><tbody>${list}</tbody></table></div></div>`;
+}
+function addUser(){const u=el("nu").value.trim(),ad=el("nad").value.trim(),p=el("np").value,r=el("nr").value,d=el("nd").value.trim();if(!u||!p){el("uok").innerHTML=`<span style="color:var(--danger);">Kullanıcı adı ve şifre zorunlu</span>`;return;}if(USERS.find(x=>x.u===u)){el("uok").innerHTML=`<span style="color:var(--danger);">Bu kullanıcı adı zaten var</span>`;return;}USERS.push({u,ad,p,rol:r,depo:r==="A101_DEPO"?d:""});log("kullanici_ekle","Yeni: "+u);vUsers();}
+function delUser(u){if(!confirm(u+" silinsin mi?"))return;USERS=USERS.filter(x=>x.u!==u);log("kullanici_sil","Silinen: "+u);vUsers();}
+
+/* --- AKTİVİTE (A101 depo girişleri: sayaç + grafik + loglar) --- */
+function loginChart(){
+  // günlükleri haftalık ORTALAMAYA çevir (pazar sıfırları düzleşsin)
+  const D=MOCK.daily, weeks=[];
+  for(let i=0;i<D.length;i+=7){const c=D.slice(i,i+7);weeks.push({d:c[0].d,n:Math.round(c.reduce((s,p)=>s+p.n,0)/c.length*10)/10});}
+  const W=920,H=185,pad=30;
+  const maxN=Math.max(...weeks.map(x=>x.n),1), xw=(W-pad*2)/(Math.max(1,weeks.length-1));
+  const X=i=>pad+i*xw, Y=n=>H-pad-(n/maxN)*(H-pad*2);
+  const line=weeks.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(p.n).toFixed(1)}`).join(" ");
+  const area=`M${X(0)},${H-pad} `+weeks.map((p,i)=>`L${X(i).toFixed(1)},${Y(p.n).toFixed(1)}`).join(" ")+` L${X(weeks.length-1).toFixed(1)},${H-pad} Z`;
+  const dots=weeks.map((p,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(p.n).toFixed(1)}" r="3.5" fill="#4B2E83"/><text x="${X(i).toFixed(1)}" y="${(Y(p.n)-9).toFixed(1)}" font-size="10" fill="#4B2E83" text-anchor="middle" font-weight="700">${p.n}</text>`).join("");
+  const xlab=weeks.map((p,i)=>`<text x="${X(i).toFixed(1)}" y="${H-8}" font-size="10" fill="#9A93AC" text-anchor="middle">${p.d.getDate()}.${p.d.getMonth()+1}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4B2E83" stop-opacity="0.2"/><stop offset="1" stop-color="#4B2E83" stop-opacity="0"/></linearGradient></defs><line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#EEECF4"/><path d="${area}" fill="url(#ga)"/><path d="${line}" fill="none" stroke="#4B2E83" stroke-width="2.2"/>${dots}${xlab}</svg>`;
+}
+function vActivity(){
+  const entered=MOCK.entered.length, total=MOCK.total, pct=Math.round(entered/total*100);
+  const dl=(MOCK.recent||[]).slice(0,15);   // 15 rastgele son A101 depo girişi
+  const rows=dl.map(l=>`<tr><td class="mono" style="white-space:nowrap;">${l.t.toLocaleString('tr-TR')}</td><td class="mono">${esc(l.u)}</td><td style="color:var(--label);">${esc(l.detay)}</td></tr>`).join("")||`<tr><td colspan="3" style="color:var(--muted);padding:20px;text-align:center;">Kayıt yok.</td></tr>`;
+  el("content").innerHTML=`
+    <div class="card" style="padding:20px 22px;margin-bottom:18px;max-width:420px;">
+      <div style="font-size:12.5px;color:var(--muted);font-weight:700;">GİRİŞ YAPAN DEPO</div>
+      <div style="font-size:34px;font-weight:800;margin:2px 0;">${entered} <span style="font-size:18px;color:var(--muted);font-weight:600;">/ ${total}</span></div>
+      <div style="height:10px;background:#F1EFF6;border-radius:6px;overflow:hidden;margin-top:6px;"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#4B2E83,#0A57C2);"></div></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px;">58 A101 deposunun %${pct}'i platforma giriş yaptı.</div>
+    </div>
+    <div class="card" style="padding:20px 24px;margin-bottom:18px;">
+      <div style="font-weight:800;font-size:15px;">📈 Haftalık Ortalama Giriş</div>
+      <div style="font-size:13px;color:var(--label);margin:8px 0 14px;line-height:1.9;">Haziran: <b>17 depo</b> giriş yaptı<br>Temmuz: <b style="color:#0A57C2;">29 depo</b> giriş yaptı</div>
+      ${loginChart()}
+    </div>
+    <div class="card" style="overflow:hidden;"><div style="padding:16px 20px;font-weight:800;font-size:15px;border-bottom:1px solid #F1EFF6;">Son Depo Girişleri</div><div style="overflow-x:auto;"><table style="min-width:520px;"><thead><tr style="background:#FAFAFC;"><th style="padding-left:20px;">Zaman</th><th>Depo Kodu</th><th>Detay</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* --- Sayfalama --- */
+function pager(pages,pg,cb,total){
+  if(pages<=1)return `<div style="padding:12px 20px;font-size:12.5px;color:var(--muted);">Toplam ${total} kayıt</div>`;
+  let nums="";const start=Math.max(0,Math.min(pg-2,pages-5));for(let i=start;i<Math.min(pages,start+5);i++)nums+=`<button onclick="(function(P){${cb}})(${i})" style="min-width:34px;padding:7px 11px;border-radius:9px;border:1px solid ${i===pg?'var(--mdlz)':'var(--border)'};background:${i===pg?'var(--mdlz)':'#fff'};color:${i===pg?'#fff':'var(--label)'};font-weight:600;font-size:13px;">${i+1}</button>`;
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;gap:16px;flex-wrap:wrap;"><span style="font-size:12.5px;color:var(--muted);">Toplam ${total} kayıt · Sayfa ${pg+1}/${pages}</span><div style="display:flex;gap:4px;"><button onclick="(function(P){${cb}})(${Math.max(0,pg-1)})" style="padding:7px 11px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:13px;">← Önceki</button>${nums}<button onclick="(function(P){${cb}})(${Math.min(pages-1,pg+1)})" style="padding:7px 11px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:13px;">Sonraki →</button></div></div>`;
+}
+
+renderLogin();
+</script>
+</body>
+</html>
